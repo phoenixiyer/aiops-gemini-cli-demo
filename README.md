@@ -61,7 +61,7 @@ Out of the box, this project runs **100% locally** with zero cloud infrastructur
 
 ```bash
 # 1. Clone and enter the project
-git clone <your-repository-url>
+git clone https://github.com/phoenixiyer/aiops-gemini-cli-demo.git
 cd aiops-gemini-cli-demo
 
 # 2. Run setup script to install dependencies
