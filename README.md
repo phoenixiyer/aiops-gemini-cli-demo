@@ -154,6 +154,11 @@ No CLI rewrite is required! The moment you save the script and restart `gemini`,
 └── pyproject.toml           # Python project config
 ```
 
+## Roadmap
+
+- [ ] **A2UI Protocol Integration**: Future updates will implement the Agent-to-UI (A2UI) protocol capability.
+- [ ] **Dynamic Dashboards**: The CLI will soon be able to auto-generate and render dynamic visualizations natively based on live production issues.
+
 ## Author
 
 **ArunKG**  
