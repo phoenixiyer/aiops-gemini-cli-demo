@@ -100,7 +100,7 @@ Inside the `gemini` CLI session, try pasting these prompts in sequence to comple
 
 While this demo uses Python scripts to simulate metric and log data to make the initial setup bulletproof, it is designed from the ground-up so that you can trivially connect the Gemini CLI directly to your **real** infrastructure (e.g., Datadog, Splunk, Kubernetes, PagerDuty). 
 
-Because Gemini CLI uses **Extensions** (which are fully compatible with the **Model Context Protocol**), connecting to a real system simply involves pointing the CLI extension configuration to a real open-source MCP server implementation, or rewriting the Python tools to call real APIs.
+Because Gemini CLI uses **Extensions**, connecting to a real system simply involves pointing the CLI extension configuration to a real open-source MCP server implementation, or rewriting the Python tools to call real APIs.
 
 ### Option 1: Use an existing open-source MCP Server
 You can replace the local mock K8s server with an actual live integration by downloading a community MCP server and updating the `settings.json` file. 
