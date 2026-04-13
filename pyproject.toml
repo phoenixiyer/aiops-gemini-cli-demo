@@ -1,0 +1,23 @@
+[project]
+name = "aiops-gemini-cli-demo"
+version = "1.0.0"
+description = "Production-grade AIOps demo using Gemini CLI and MCP servers"
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=2.0.0",
+    "markdown-pdf>=1.13.1",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.4.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

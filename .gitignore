@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+.ruff_cache/
+dist/
+*.egg-info/
+.pytest_cache/
+# Local Generated Data
+*.log
+
+# OS
+.DS_Store

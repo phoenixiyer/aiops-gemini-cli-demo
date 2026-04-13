@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "observability": {
+      "command": "uv",
+      "args": ["run", "--python", "3.11", "mcp-servers/observability/server.py"],
+      "env": {
+        "UV_INDEX_URL": "https://pypi.org/simple/"
+      }
+    },
+    "kubernetes": {
+      "command": "uv",
+      "args": ["run", "--python", "3.11", "mcp-servers/kubernetes/server.py"],
+      "env": {
+        "UV_INDEX_URL": "https://pypi.org/simple/"
+      }
+    },
+    "alerting": {
+      "command": "uv",
+      "args": ["run", "--python", "3.11", "mcp-servers/alerting/server.py"],
+      "env": {
+        "UV_INDEX_URL": "https://pypi.org/simple/"
+      }
+    }
+  }
+}

@@ -1,0 +1,238 @@
+{
+  "cpu_spike": {
+    "title": "CPU Spike on Payment Service",
+    "description": "payment-service CPU is spiking due to a runaway regex validation in the new payment verification module deployed 20 minutes ago.",
+    "duration_minutes": 10,
+    "severity": "critical",
+    "affected_services": {
+      "payment-service": {
+        "peak_metrics": {
+          "cpu": 95.0,
+          "memory": 72.0,
+          "latency": 3500.0,
+          "error_rate": 8.5,
+          "connections": 45,
+          "rps": 120.0
+        },
+        "logs": [
+          "[ERROR] PaymentVerification: regex timeout after 30000ms on input validation",
+          "[ERROR] RequestHandler: thread pool exhausted — 0/50 threads available",
+          "[WARN] HealthCheck: response time 4200ms exceeds 1000ms threshold",
+          "[ERROR] PaymentVerification: regex timeout after 30000ms on input validation",
+          "[ERROR] CircuitBreaker: OPEN state — payment-verification endpoint",
+          "[FATAL] PaymentService: OOM risk — heap usage at 89% after GC",
+          "[ERROR] Kubernetes: Liveness probe failed 3 consecutive times",
+          "[WARN] LoadBalancer: removing payment-service-pod-3 from rotation"
+        ],
+        "traces": [
+          {"operation": "POST /api/v2/payments/verify", "duration_ms": 32000, "status": "TIMEOUT"},
+          {"operation": "regex.validate_card_number", "duration_ms": 30500, "status": "ERROR"},
+          {"operation": "db.query_payment_history", "duration_ms": 45, "status": "OK"},
+          {"operation": "cache.check_fraud_score", "duration_ms": 3, "status": "OK"}
+        ]
+      },
+      "api-gateway": {
+        "peak_metrics": {
+          "cpu": 45.0,
+          "memory": 55.0,
+          "latency": 4200.0,
+          "error_rate": 12.0,
+          "connections": 180,
+          "rps": 850.0
+        },
+        "logs": [
+          "[WARN] Upstream payment-service: 504 Gateway Timeout",
+          "[ERROR] CircuitBreaker: payment-service circuit OPEN",
+          "[WARN] Retry storm detected: 3x normal retry rate to payment-service"
+        ],
+        "traces": [
+          {"operation": "route /checkout", "duration_ms": 35000, "status": "TIMEOUT"},
+          {"operation": "proxy payment-service", "duration_ms": 34500, "status": "ERROR"}
+        ]
+      }
+    }
+  },
+
+  "memory_leak": {
+    "title": "Memory Leak in Order Service",
+    "description": "order-service is leaking memory due to unclosed database cursors in the batch order export feature. OOM kill estimated in 30 minutes.",
+    "duration_minutes": 15,
+    "severity": "high",
+    "affected_services": {
+      "order-service": {
+        "peak_metrics": {
+          "cpu": 55.0,
+          "memory": 96.0,
+          "latency": 800.0,
+          "error_rate": 3.2,
+          "connections": 190,
+          "rps": 280.0
+        },
+        "logs": [
+          "[WARN] MemoryMonitor: heap usage 72% and climbing (baseline: 45%)",
+          "[WARN] GarbageCollector: full GC taking 1200ms (baseline: 50ms)",
+          "[ERROR] DatabasePool: cursor leak detected — 847 open cursors (limit: 1000)",
+          "[WARN] MemoryMonitor: heap usage 81% — OOM kill threshold at 95%",
+          "[ERROR] BatchExport: cursor not closed in export_orders_to_csv()",
+          "[WARN] GarbageCollector: full GC taking 3400ms — stop-the-world pause",
+          "[ERROR] MemoryMonitor: heap usage 89% — ETA to OOM: ~12 minutes",
+          "[FATAL] Kubernetes: pod order-service-pod-2 OOMKilled (exit code 137)"
+        ],
+        "traces": [
+          {"operation": "POST /api/orders/export", "duration_ms": 5200, "status": "OK"},
+          {"operation": "db.open_cursor", "duration_ms": 2, "status": "OK"},
+          {"operation": "db.fetch_batch(1000)", "duration_ms": 450, "status": "OK"},
+          {"operation": "csv.write_rows", "duration_ms": 120, "status": "OK"},
+          {"operation": "db.close_cursor", "duration_ms": 0, "status": "SKIPPED"}
+        ]
+      }
+    }
+  },
+
+  "cascading_failure": {
+    "title": "Cascading Failure from Database Latency",
+    "description": "postgres-primary is experiencing a long-running analytical query that is locking tables. This causes connection pool exhaustion in upstream services, leading to a full cascade of 5xx errors.",
+    "duration_minutes": 12,
+    "severity": "critical",
+    "affected_services": {
+      "postgres-primary": {
+        "peak_metrics": {
+          "cpu": 92.0,
+          "memory": 88.0,
+          "latency": 8500.0,
+          "error_rate": 0.0,
+          "connections": 300,
+          "rps": 0.0
+        },
+        "logs": [
+          "[WARN] SlowQuery: query running for 180s — SELECT * FROM orders JOIN inventory... (analytics dashboard)",
+          "[ERROR] ConnectionPool: max connections reached (300/300)",
+          "[WARN] LockManager: table 'orders' lock held for 120s by PID 4821",
+          "[ERROR] ConnectionPool: 47 queries waiting in queue (max queue: 50)",
+          "[FATAL] PostgreSQL: too many connections for role 'app_user'"
+        ],
+        "traces": [
+          {"operation": "SELECT analytics_dashboard", "duration_ms": 180000, "status": "RUNNING"},
+          {"operation": "INSERT order", "duration_ms": 8500, "status": "WAITING_LOCK"},
+          {"operation": "SELECT inventory_check", "duration_ms": 7200, "status": "WAITING_LOCK"}
+        ]
+      },
+      "payment-service": {
+        "peak_metrics": {
+          "cpu": 65.0,
+          "memory": 70.0,
+          "latency": 9200.0,
+          "error_rate": 35.0,
+          "connections": 15,
+          "rps": 80.0
+        },
+        "logs": [
+          "[ERROR] DatabasePool: connection acquisition timeout after 30s",
+          "[ERROR] PaymentProcessor: failed to record transaction — DB unavailable",
+          "[ERROR] CircuitBreaker: postgres-primary circuit OPEN after 5 failures",
+          "[WARN] Fallback: returning cached payment status (stale: 5 min)"
+        ],
+        "traces": [
+          {"operation": "POST /api/payments", "duration_ms": 31000, "status": "ERROR"},
+          {"operation": "db.acquire_connection", "duration_ms": 30000, "status": "TIMEOUT"},
+          {"operation": "db.insert_transaction", "duration_ms": 0, "status": "SKIPPED"}
+        ]
+      },
+      "order-service": {
+        "peak_metrics": {
+          "cpu": 50.0,
+          "memory": 60.0,
+          "latency": 8800.0,
+          "error_rate": 28.0,
+          "connections": 10,
+          "rps": 150.0
+        },
+        "logs": [
+          "[ERROR] DatabasePool: connection timeout — all connections busy",
+          "[ERROR] OrderProcessor: cannot create order — DB write failed",
+          "[WARN] RetryPolicy: exhausted 3 retries for order creation",
+          "[ERROR] API: returning 503 Service Unavailable to client"
+        ],
+        "traces": [
+          {"operation": "POST /api/orders", "duration_ms": 32000, "status": "ERROR"},
+          {"operation": "db.acquire_connection", "duration_ms": 30000, "status": "TIMEOUT"}
+        ]
+      },
+      "api-gateway": {
+        "peak_metrics": {
+          "cpu": 55.0,
+          "memory": 50.0,
+          "latency": 10500.0,
+          "error_rate": 42.0,
+          "connections": 250,
+          "rps": 850.0
+        },
+        "logs": [
+          "[ERROR] Upstream: payment-service returned 503",
+          "[ERROR] Upstream: order-service returned 503",
+          "[WARN] ErrorRate: 42% of requests failing (threshold: 5%)",
+          "[ERROR] AlertManager: CRITICAL alert triggered — cascading failure detected"
+        ],
+        "traces": [
+          {"operation": "route /checkout", "duration_ms": 32000, "status": "ERROR"},
+          {"operation": "proxy payment-service", "duration_ms": 31500, "status": "ERROR"},
+          {"operation": "proxy order-service", "duration_ms": 31200, "status": "ERROR"}
+        ]
+      }
+    }
+  },
+
+  "bad_deployment": {
+    "title": "Bad Canary Deployment on Inventory Service",
+    "description": "A canary deployment of inventory-service v2.4.0 introduced a breaking API change. The new version returns inventory counts as strings instead of integers, causing JSON parse errors in order-service.",
+    "duration_minutes": 8,
+    "severity": "high",
+    "affected_services": {
+      "inventory-service": {
+        "peak_metrics": {
+          "cpu": 25.0,
+          "memory": 52.0,
+          "latency": 40.0,
+          "error_rate": 0.5,
+          "connections": 45,
+          "rps": 200.0
+        },
+        "logs": [
+          "[INFO] Deployment: canary rollout inventory-service v2.4.0 (25% traffic)",
+          "[INFO] Deployment: image updated from v2.3.1 to v2.4.0",
+          "[WARN] API: response schema changed — 'quantity' field type: int -> string",
+          "[INFO] HealthCheck: inventory-service v2.4.0 pods healthy"
+        ],
+        "traces": [
+          {"operation": "GET /api/inventory/check", "duration_ms": 38, "status": "OK"},
+          {"operation": "db.query_stock", "duration_ms": 15, "status": "OK"},
+          {"operation": "serialize_response", "duration_ms": 2, "status": "OK"}
+        ]
+      },
+      "order-service": {
+        "peak_metrics": {
+          "cpu": 40.0,
+          "memory": 48.0,
+          "latency": 120.0,
+          "error_rate": 12.0,
+          "connections": 80,
+          "rps": 450.0
+        },
+        "logs": [
+          "[ERROR] InventoryClient: JSON parse error — expected int for 'quantity', got string '150'",
+          "[ERROR] OrderValidator: cannot validate order — inventory check failed",
+          "[ERROR] InventoryClient: JSON parse error — expected int for 'quantity', got string '0'",
+          "[WARN] ErrorRate: 12% of orders failing (affects 25% of traffic via canary)",
+          "[ERROR] InventoryClient: type mismatch in deserialize_inventory_response()",
+          "[WARN] AlertManager: error rate threshold exceeded on order-service"
+        ],
+        "traces": [
+          {"operation": "POST /api/orders", "duration_ms": 120, "status": "ERROR"},
+          {"operation": "http.GET inventory-service/check", "duration_ms": 42, "status": "OK"},
+          {"operation": "json.parse_inventory_response", "duration_ms": 1, "status": "ERROR"},
+          {"operation": "validate_order", "duration_ms": 0, "status": "SKIPPED"}
+        ]
+      }
+    }
+  }
+}
