@@ -122,6 +122,11 @@ A real-time web dashboard that renders the NovaMart service dependency graph. He
 
 > Launched automatically by `./scripts/start.sh` at **http://localhost:8080**
 
+<div align="center">
+  <img src="docs/assets/dashboard-incident.png" alt="Topology Dashboard during Incident" width="800"/>
+  <p><em>The dashboard in an active "Cascading Failure" incident state.</em></p>
+</div>
+
 **Dashboard features:**
 - 🔴/🟡/🟢 animated D3 force-directed graph — nodes pulse red during incidents
 - Flowing dashed edges when a cascading failure propagates
