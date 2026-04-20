@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NovaMart — Live Service Topology</title>
+  <meta name="description" content="Real-time service topology dashboard for NovaMart's microservices platform, powered by Apollo AI SRE." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #090d14;
+      --surface: #111827;
+      --surface2: #1a2235;
+      --border: #1f2d45;
+      --text: #e2e8f0;
+      --text-muted: #64748b;
+      --accent: #3b82f6;
+      --accent-glow: rgba(59,130,246,0.25);
+      --healthy: #10b981;
+      --degraded: #f59e0b;
+      --critical: #ef4444;
+      --healthy-glow: rgba(16,185,129,0.3);
+      --degraded-glow: rgba(245,158,11,0.3);
+      --critical-glow: rgba(239,68,68,0.4);
+    }
+
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; overflow: hidden; }
+
+    /* ── Layout ── */
+    #app { display: grid; grid-template-rows: 56px 1fr; grid-template-columns: 1fr 320px; height: 100vh; }
+    #header { grid-column: 1/-1; display: flex; align-items: center; gap: 16px; padding: 0 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
+    #graph-pane { position: relative; overflow: hidden; }
+    #sidebar { background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Header ── */
+    .logo { font-size: 18px; font-weight: 700; letter-spacing: -0.5px; }
+    .logo span { color: var(--accent); }
+    .badge { font-size: 11px; font-weight: 500; padding: 3px 10px; border-radius: 99px; background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
+    .spacer { flex: 1; }
+    #live-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--healthy); }
+    #live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--healthy); animation: pulse-dot 2s infinite; }
+    @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(0.8)} }
+
+    /* ── Scenario banner ── */
+    #scenario-banner { display: none; padding: 6px 24px; font-size: 12px; font-weight: 500; text-align: center;
+      background: linear-gradient(90deg, transparent, var(--critical-glow), transparent);
+      color: #fca5a5; letter-spacing: 0.5px; border-bottom: 1px solid rgba(239,68,68,0.3); animation: banner-pulse 2s infinite; }
+    @keyframes banner-pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+    #scenario-banner.active { display: block; }
+
+    /* ── Graph ── */
+    #graph-svg { width: 100%; height: 100%; }
+
+    /* D3 nodes */
+    .node-group { cursor: pointer; }
+    .node-circle { stroke-width: 2; transition: all 0.4s ease; filter: drop-shadow(0 0 6px transparent); }
+    .node-circle.healthy { fill: #0f172a; stroke: var(--healthy); filter: drop-shadow(0 0 8px var(--healthy-glow)); }
+    .node-circle.degraded { fill: #0f172a; stroke: var(--degraded); filter: drop-shadow(0 0 10px var(--degraded-glow)); }
+    .node-circle.critical { fill: #170a0a; stroke: var(--critical); filter: drop-shadow(0 0 14px var(--critical-glow)); animation: node-critical 1s infinite; }
+    @keyframes node-critical { 0%,100%{filter:drop-shadow(0 0 14px var(--critical-glow))} 50%{filter:drop-shadow(0 0 22px rgba(239,68,68,0.7))} }
+    .node-label { fill: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500; pointer-events: none; }
+    .node-icon { fill: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 16px; pointer-events: none; }
+
+    /* D3 edges */
+    .link { stroke: var(--border); stroke-width: 1.5; fill: none; opacity: 0.8; transition: stroke 0.4s; }
+    .link.degraded { stroke: var(--degraded); opacity: 0.6; }
+    .link.critical { stroke: var(--critical); opacity: 0.8; stroke-dasharray: 6 3; animation: dash-flow 1s linear infinite; }
+    @keyframes dash-flow { to { stroke-dashoffset: -18; } }
+
+    /* ── Sidebar ── */
+    .sidebar-header { padding: 16px 18px 12px; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+    #alert-list { flex: 0 0 auto; max-height: 180px; overflow-y: auto; border-bottom: 1px solid var(--border); }
+    .alert-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--border); transition: background 0.2s; }
+    .alert-item:hover { background: var(--surface2); }
+    .alert-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .alert-dot.critical { background: var(--critical); box-shadow: 0 0 6px var(--critical-glow); }
+    .alert-dot.warning { background: var(--degraded); }
+    .alert-title { font-size: 12px; font-weight: 500; line-height: 1.4; }
+    .alert-meta { font-size: 10px; color: var(--text-muted); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+
+    #metrics-panel { flex: 1; overflow-y: auto; padding: 16px; }
+    #metrics-panel h3 { font-size: 13px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    #metrics-panel h3 .status-pill { font-size: 10px; padding: 2px 8px; border-radius: 99px; font-weight: 500; }
+    .status-pill.healthy { background: rgba(16,185,129,0.15); color: var(--healthy); }
+    .status-pill.degraded { background: rgba(245,158,11,0.15); color: var(--degraded); }
+    .status-pill.critical { background: rgba(239,68,68,0.15); color: var(--critical); }
+
+    .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .metric-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .metric-label { font-size: 10px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+    .metric-value { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
+    .metric-value.warn { color: var(--degraded); }
+    .metric-value.danger { color: var(--critical); }
+    .metric-value.ok { color: var(--healthy); }
+
+    .bar-container { margin-top: 8px; }
+    .bar-track { background: var(--border); border-radius: 4px; height: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease, background 0.4s; }
+
+    .hint { text-align: center; color: var(--text-muted); font-size: 12px; padding: 32px 16px; line-height: 1.6; }
+
+    /* ── Scenarios panel ── */
+    #scenario-controls { padding: 12px 16px; border-top: 1px solid var(--border); }
+    .sc-label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .sc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+    .sc-btn { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 8px; font-size: 10px; font-weight: 500; color: var(--text); cursor: pointer; transition: all 0.2s; font-family: inherit; text-align: left; line-height: 1.3; }
+    .sc-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+    .sc-btn.active { border-color: var(--critical); color: var(--critical); background: rgba(239,68,68,0.1); }
+    #clear-btn { width: 100%; margin-top: 6px; background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; padding: 7px; font-size: 10px; font-family: inherit; color: var(--text-muted); cursor: pointer; transition: all 0.2s; }
+    #clear-btn:hover { color: var(--healthy); border-color: var(--healthy); }
+
+    /* ── Scrollbars ── */
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <header id="header">
+    <div class="logo">Nova<span>Mart</span></div>
+    <span class="badge">Production</span>
+    <span class="badge">8 Services</span>
+    <div class="spacer"></div>
+    <div id="live-indicator"><div id="live-dot"></div> LIVE</div>
+  </header>
+
+  <!-- Scenario Banner -->
+  <div id="scenario-banner" style="grid-column:1/-1">🔴 ACTIVE INCIDENT — <span id="scenario-name"></span></div>
+
+  <!-- Graph -->
+  <main id="graph-pane">
+    <svg id="graph-svg"></svg>
+  </main>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-header">🔔 Active Alerts</div>
+    <div id="alert-list"><div class="hint">Loading alerts…</div></div>
+
+    <div class="sidebar-header" style="margin-top:0">📊 Service Metrics</div>
+    <div id="metrics-panel"><div class="hint">Click a node to inspect metrics</div></div>
+
+    <div id="scenario-controls">
+      <div class="sc-label">⚡ Inject Scenario</div>
+      <div class="sc-grid">
+        <button class="sc-btn" onclick="triggerScenario('cpu_spike')">💥 CPU Spike<br/><span style="opacity:.6">payment-service</span></button>
+        <button class="sc-btn" onclick="triggerScenario('memory_leak')">🧠 Memory Leak<br/><span style="opacity:.6">order-service</span></button>
+        <button class="sc-btn" onclick="triggerScenario('cascading_failure')">🌊 Cascade<br/><span style="opacity:.6">DB → upstream</span></button>
+        <button class="sc-btn" onclick="triggerScenario('bad_deployment')">🚫 Bad Deploy<br/><span style="opacity:.6">canary error spike</span></button>
+      </div>
+      <button id="clear-btn" onclick="clearScenario()">✅ Clear scenario / restore baseline</button>
+    </div>
+  </aside>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  DATA & STATE
+// ═══════════════════════════════════════════════════════
+const SERVICE_META = {
+  'api-gateway':         { icon: '⟁',  label: 'api-gateway',         tier: 0 },
+  'payment-service':     { icon: '💳', label: 'payment-service',     tier: 1 },
+  'order-service':       { icon: '📦', label: 'order-service',       tier: 1 },
+  'user-service':        { icon: '👤', label: 'user-service',        tier: 1 },
+  'inventory-service':   { icon: '🗄',  label: 'inventory-service',  tier: 1 },
+  'notification-service':{ icon: '🔔', label: 'notification-service',tier: 2 },
+  'postgres-primary':    { icon: '🗃',  label: 'postgres-primary',   tier: 2 },
+  'redis-cache':         { icon: '⚡', label: 'redis-cache',         tier: 2 },
+};
+
+let topology = null;
+let allMetrics = {};
+let selectedService = null;
+let activeScenario = null;
+let simulation = null;
+
+// ═══════════════════════════════════════════════════════
+//  D3 GRAPH
+// ═══════════════════════════════════════════════════════
+const svg = d3.select('#graph-svg');
+let width = 0, height = 0;
+let linkGroup, nodeGroup;
+
+function initGraph() {
+  svg.selectAll('*').remove();
+  const el = document.getElementById('graph-pane');
+  width = el.clientWidth;
+  height = el.clientHeight;
+
+  svg.append('defs').append('marker')
+    .attr('id', 'arrow')
+    .attr('viewBox', '0 -4 8 8')
+    .attr('refX', 22).attr('refY', 0)
+    .attr('markerWidth', 6).attr('markerHeight', 6)
+    .attr('orient', 'auto')
+    .append('path').attr('d', 'M0,-4L8,0L0,4').attr('fill', '#1f2d45');
+
+  linkGroup = svg.append('g').attr('class', 'links');
+  nodeGroup = svg.append('g').attr('class', 'nodes');
+}
+
+function buildGraph(topo) {
+  const services = Object.keys(topo.services);
+  const nodes = services.map(id => ({ id, ...topo.services[id], ...SERVICE_META[id] }));
+  const links = [];
+  services.forEach(src => {
+    (topo.services[src].depends_on || []).forEach(tgt => {
+      links.push({ source: src, target: tgt });
+    });
+  });
+
+  if (simulation) simulation.stop();
+  simulation = d3.forceSimulation(nodes)
+    .force('link', d3.forceLink(links).id(d => d.id).distance(110).strength(0.6))
+    .force('charge', d3.forceManyBody().strength(-320))
+    .force('center', d3.forceCenter(width / 2, height / 2))
+    .force('collision', d3.forceCollide(42))
+    .force('y', d3.forceY(d => {
+      const tier = (SERVICE_META[d.id] || {}).tier ?? 1;
+      return (height * 0.2) + tier * (height * 0.28);
+    }).strength(0.35));
+
+  // Links
+  const link = linkGroup.selectAll('.link')
+    .data(links, d => `${d.source.id || d.source}-${d.target.id || d.target}`)
+    .join(
+      enter => enter.append('path').attr('class', d => `link ${getEdgeClass(d, topo)}`),
+      update => update.attr('class', d => `link ${getEdgeClass(d, topo)}`),
+    );
+
+  // Nodes
+  const node = nodeGroup.selectAll('.node-group')
+    .data(nodes, d => d.id)
+    .join(
+      enter => {
+        const g = enter.append('g').attr('class', 'node-group').call(
+          d3.drag().on('start', dragStart).on('drag', dragged).on('end', dragEnd)
+        ).on('click', (e, d) => selectService(d.id));
+
+        g.append('circle').attr('r', 28).attr('class', d => `node-circle ${d.health}`);
+        g.append('text').attr('class', 'node-icon').attr('text-anchor', 'middle').attr('dy', '0.35em').text(d => d.icon);
+        g.append('text').attr('class', 'node-label').attr('text-anchor', 'middle').attr('dy', '44px').text(d => d.label.replace('-service',''));
+        return g;
+      },
+      update => {
+        update.select('.node-circle').attr('class', d => `node-circle ${d.health}`);
+        return update;
+      }
+    );
+
+  simulation.on('tick', () => {
+    link.attr('d', d => {
+      const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y;
+      const mx = (sx + tx) / 2, my = (sy + ty) / 2;
+      return `M${sx},${sy} Q${mx},${my} ${tx},${ty}`;
+    });
+    node.attr('transform', d => `translate(${clamp(d.x,40,width-40)},${clamp(d.y,40,height-40)})`);
+  });
+}
+
+function getEdgeClass(d, topo) {
+  const src = d.source.id || d.source;
+  const tgt = d.target.id || d.target;
+  const srcH = (topo.services[src] || {}).health;
+  const tgtH = (topo.services[tgt] || {}).health;
+  if (srcH === 'critical' || tgtH === 'critical') return 'critical';
+  if (srcH === 'degraded' || tgtH === 'degraded') return 'degraded';
+  return '';
+}
+
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+function dragStart(e, d) { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; }
+function dragged(e, d) { d.fx = e.x; d.fy = e.y; }
+function dragEnd(e, d) { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }
+
+// ═══════════════════════════════════════════════════════
+//  METRICS PANEL
+// ═══════════════════════════════════════════════════════
+function selectService(id) {
+  selectedService = id;
+  renderMetrics(id, allMetrics[id]);
+}
+
+function colorClass(val, warn, danger) {
+  if (val >= danger) return 'danger';
+  if (val >= warn) return 'warn';
+  return 'ok';
+}
+
+function barColor(val, warn, danger) {
+  if (val >= danger) return '#ef4444';
+  if (val >= warn) return '#f59e0b';
+  return '#10b981';
+}
+
+function renderMetrics(id, m) {
+  const panel = document.getElementById('metrics-panel');
+  if (!m || m.error) { panel.innerHTML = `<div class="hint">No metrics available for ${id}</div>`; return; }
+  const health = (topology?.services[id] || {}).health || 'healthy';
+  panel.innerHTML = `
+    <h3>${id.replace('-service','').replace('-','')} <span class="status-pill ${health}">${health}</span></h3>
+    <div class="metric-grid">
+      ${metricCard('CPU', m.cpu_percent.toFixed(1)+'%', colorClass(m.cpu_percent,60,85), m.cpu_percent, 100)}
+      ${metricCard('Memory', m.memory_percent.toFixed(1)+'%', colorClass(m.memory_percent,70,90), m.memory_percent, 100)}
+      ${metricCard('P95 Latency', m.latency_p95_ms.toFixed(0)+'ms', colorClass(m.latency_p95_ms,500,2000), Math.min(m.latency_p95_ms/50,100), 100)}
+      ${metricCard('Error Rate', m.error_rate_percent.toFixed(2)+'%', colorClass(m.error_rate_percent,2,8), Math.min(m.error_rate_percent*5,100), 100)}
+      ${metricCard('RPS', m.requests_per_second.toFixed(0), 'ok', null, null)}
+      ${metricCard('Connections', m.active_connections, 'ok', null, null)}
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);font-family:'JetBrains Mono',monospace">Updated ${m.timestamp}</div>
+  `;
+}
+
+function metricCard(label, val, cls, pct, max) {
+  const bar = pct !== null ? `
+    <div class="bar-container">
+      <div class="bar-track"><div class="bar-fill" style="width:${Math.min(pct,max)}%;background:${barColor(pct,60,85)}"></div></div>
+    </div>` : '';
+  return `<div class="metric-card"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${val}</div>${bar}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  ALERTS
+// ═══════════════════════════════════════════════════════
+function renderAlerts(data) {
+  const el = document.getElementById('alert-list');
+  if (!data.alerts || data.alerts.length === 0) {
+    el.innerHTML = '<div class="hint" style="padding:16px">🟢 No active alerts</div>';
+    return;
+  }
+  el.innerHTML = data.alerts.map(a => `
+    <div class="alert-item">
+      <div class="alert-dot ${a.severity}"></div>
+      <div>
+        <div class="alert-title">${a.title}</div>
+        <div class="alert-meta">${a.service} · ${a.severity.toUpperCase()} · ${a.current_value}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  SCENARIO CONTROLS
+// ═══════════════════════════════════════════════════════
+async function triggerScenario(name) {
+  await fetch(`/api/scenario/${name}`, { method: 'POST' });
+  document.querySelectorAll('.sc-btn').forEach(b => b.classList.remove('active'));
+  event.target.closest('.sc-btn').classList.add('active');
+}
+
+async function clearScenario() {
+  await fetch('/api/scenario', { method: 'DELETE' });
+  document.querySelectorAll('.sc-btn').forEach(b => b.classList.remove('active'));
+}
+
+// ═══════════════════════════════════════════════════════
+//  POLLING LOOP
+// ═══════════════════════════════════════════════════════
+async function poll() {
+  try {
+    const [topoRes, metricsRes, alertsRes, scenRes] = await Promise.all([
+      fetch('/api/topology').then(r => r.json()),
+      fetch('/api/metrics').then(r => r.json()),
+      fetch('/api/alerts').then(r => r.json()),
+      fetch('/api/scenario').then(r => r.json()),
+    ]);
+
+    topology = topoRes;
+    allMetrics = metricsRes;
+
+    // Rebuild or update graph
+    buildGraph(topoRes);
+    renderAlerts(alertsRes);
+
+    if (selectedService) renderMetrics(selectedService, allMetrics[selectedService]);
+
+    // Scenario banner
+    const banner = document.getElementById('scenario-banner');
+    if (scenRes.active_scenario) {
+      banner.classList.add('active');
+      document.getElementById('scenario-name').textContent = scenRes.active_scenario.replace(/_/g,' ').toUpperCase();
+    } else {
+      banner.classList.remove('active');
+    }
+  } catch(e) {
+    console.warn('Poll error', e);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+initGraph();
+poll();
+setInterval(poll, 3000);
+window.addEventListener('resize', () => { initGraph(); if(topology) buildGraph(topology); });
+</script>
+</body>
+</html>
