@@ -11,3 +11,9 @@ dist/
 
 # OS
 .DS_Store
+
+# Additions
+.dashboard.log
+.adk.log
+.adk/
+
