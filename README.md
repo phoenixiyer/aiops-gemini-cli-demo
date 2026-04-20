@@ -140,15 +140,24 @@ A real-time web dashboard that renders the NovaMart service dependency graph. He
 
 ## 🤖 Multi-Agent ADK System
 
-A second demo mode using [Google ADK](https://adk.dev) that exposes a web chat UI. Instead of the Gemini CLI, this mode runs **three agents in parallel**:
+## 🤖 Multi-Agent ADK Interface
+
+NovaMart now runs a sophisticated hierarchical Multi-Agent System on Google's ADK (Agent Development Kit).
+
+> Launched automatically by `./scripts/start.sh` at **http://localhost:8001/dev-ui/?app=commander**
+
+<div align="center">
+  <img src="docs/assets/adk-multi-agent.png" alt="Google ADK Multi-Agent Interface" width="800"/>
+  <p><em>The ADK live interface tracking events, traces, and artifacts for the Commander agent.</em></p>
+</div>
+
+**Agent Architecture:**
 
 | Agent | Role | Tools |
 |-------|------|-------|
 | **Commander** | Root orchestrator — routes tasks, synthesises findings | delegates to sub-agents |
 | **Apollo** | Senior SRE — same tools as the CLI demo | Observability · Kubernetes · Alerting |
 | **Athena** | Security Analyst — new agent, new tools | Auth anomalies · CVE scanner · Access logs |
-
-> Launched automatically by `./scripts/start.sh` at **http://localhost:8001**
 
 **Try these multi-agent prompts:**
 
