@@ -155,9 +155,9 @@ NovaMart now runs a sophisticated hierarchical Multi-Agent System on Google's AD
 
 | Agent | Role | Tools |
 |-------|------|-------|
-| **Commander** | Root orchestrator — routes tasks, synthesises findings | delegates to sub-agents |
-| **Apollo** | Senior SRE — same tools as the CLI demo | Observability · Kubernetes · Alerting |
-| **Athena** | Security Analyst — new agent, new tools | Auth anomalies · CVE scanner · Access logs |
+| **Commander** | Root orchestrator : routes tasks, synthesises findings | delegates to sub-agents |
+| **Apollo** | Senior SRE : same tools as the CLI demo | Observability · Kubernetes · Alerting |
+| **Athena** | Security Analyst : new agent, new tools | Auth anomalies · CVE scanner · Access logs |
 
 **Try these multi-agent prompts:**
 
